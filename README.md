@@ -28,9 +28,6 @@ And get this:
 ✅ Tree View
 
 ```sh
-pgsql
-Copy
-Edit
 Aggregate
 └── Table scan on hits
     └── Union materialize with deduplication
