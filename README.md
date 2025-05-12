@@ -51,7 +51,8 @@ Aggregate
 6	Index lookup on oa	0.25	0.09..0.09
 ```
 
-📚 Learn More
+## 📚 Learn More
+
 📘 [MySQL EXPLAIN ANALYZE Blog Post](https://dev.mysql.com/blog-archive/mysql-explain-analyze/)
 
 📘 [PostgreSQL EXPLAIN Docs](https://www.postgresql.org/docs/current/using-explain.html)
