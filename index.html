@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQL Execution Plan Visualizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-6 text-gray-800">
+  <div class="max-w-6xl mx-auto space-y-10">
+    <h1 class="text-3xl font-bold">SQL Execution Plan Visualizer</h1>
+
+    <div class="space-y-2">
+      <textarea id="planInput" placeholder="Paste EXPLAIN ANALYZE output..." 
+        class="w-full p-4 rounded border border-gray-300 font-mono text-sm shadow-sm focus:ring-2 focus:ring-blue-300" rows="10"></textarea>
+      <button onclick="visualizePlan()" 
+        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+        Visualize Plan
+      </button>
+    </div>
+
+    <div class="flex flex-col md:flex-row gap-4">
+      <a href="https://dev.mysql.com/blog-archive/mysql-explain-analyze/" target="_blank" class="text-blue-600 underline hover:text-blue-800">
+        📘 MySQL EXPLAIN ANALYZE
+      </a>
+      <a href="https://www.postgresql.org/docs/current/using-explain.html" target="_blank" class="text-blue-600 underline hover:text-blue-800">
+        📘 PostgreSQL EXPLAIN Docs
+      </a>
+    </div>
+
+    <div>
+      <h2 class="text-2xl font-semibold mb-2">Tree View</h2>
+      <div id="treeContainer" class="bg-white p-4 rounded shadow-sm border border-gray-200"></div>
+    </div>
+
+    <div>
+      <h2 class="text-2xl font-semibold mb-2">Table View</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm bg-white rounded shadow-sm border border-gray-200">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="px-4 py-2 text-left">#</th>
+              <th class="px-4 py-2 text-left">Operation</th>
+              <th class="px-4 py-2 text-left">Cost</th>
+              <th class="px-4 py-2 text-left">Actual Time</th>
+            </tr>
+          </thead>
+          <tbody id="planTable" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="text-2xl font-semibold mb-4">🚀 Optimization Tips</h2>
+
+      <div class="bg-white p-6 rounded shadow-sm border border-gray-200 space-y-4">
+        <div>
+          <h3 class="font-bold text-lg mb-2">🚩 Rule of Thumb</h3>
+          <table class="w-full text-sm table-auto border border-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="border px-4 py-2 text-left">Situation</th>
+                <th class="border px-4 py-2 text-left">Optimization Tip</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="border px-4 py-2">High loops, low rows</td>
+                <td class="border px-4 py-2">Investigate the <strong>outer loop</strong> — maybe it's joining without an index</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">High rows, low loops</td>
+                <td class="border px-4 py-2">Could be okay if it's a single scan — try adding <strong>WHERE clauses</strong> or <strong>LIMIT</strong></td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">High both</td>
+                <td class="border px-4 py-2">🚨 Major red flag — possible <strong>cross joins</strong> or <strong>missing filters/indexes</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h3 class="font-bold text-lg mb-2">📊 Which is Better for Optimization?</h3>
+          <ul class="list-disc pl-6 space-y-1 text-sm">
+            <li><strong>✅ Fewer Loops is usually better than fewer rows.</strong></li>
+            <li>Loops often indicate <strong>nested operations</strong> like joins.</li>
+            <li>High loops often mean <em>repetitive execution</em>, due to:
+              <ul class="list-disc pl-6 mt-1">
+                <li>Nested Loop Joins (bad for large datasets unless indexed)</li>
+                <li>Lack of proper indexes</li>
+                <li>Cartesian joins (worst case)</li>
+              </ul>
+            </li>
+            <li class="mt-3"><strong>✅ Fewer Rows is also good</strong> — but not at the cost of many loops.</li>
+            <li>Too many rows can:
+              <ul class="list-disc pl-6 mt-1">
+                <li>Increase memory usage</li>
+                <li>Increase sorting time</li>
+                <li>Trigger disk spills (if large enough)</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function visualizePlan() {
+      const raw = document.getElementById("planInput").value;
+      const lines = raw.split("\n").filter(line => line.includes("->"));
+
+      const root = { children: [] };
+      const stack = [{ depth: -1, node: root }];
+      const tableData = [];
+
+      let step = 0;
+
+      lines.forEach(line => {
+        const depth = line.match(/^\s*/)[0].length;
+        const trimmed = line.trim().replace(/^->\s*/, "");
+        const match = trimmed.match(/(.+?)\s+\(cost=(.+?)\)\s+\(actual time=(.+?)\)/);
+
+        let operation = trimmed;
+        let cost = "", time = "";
+
+        if (match) {
+          operation = match[1].trim();
+          cost = match[2].trim();
+          time = match[3].trim();
+        }
+
+        const node = { text: operation, children: [] };
+        tableData.push({ step: ++step, operation, cost, time });
+
+        while (stack.length > 0 && depth <= stack[stack.length - 1].depth) {
+          stack.pop();
+        }
+
+        stack[stack.length - 1].node.children.push(node);
+        stack.push({ depth, node });
+      });
+
+      // Render Tree
+      const treeContainer = document.getElementById("treeContainer");
+      treeContainer.innerHTML = "";
+      treeContainer.appendChild(renderNode(root));
+
+      // Render Table
+      const tbody = document.getElementById("planTable");
+      tbody.innerHTML = "";
+      for (const row of tableData) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="px-4 py-2">${row.step}</td>
+          <td class="px-4 py-2">${row.operation}</td>
+          <td class="px-4 py-2">${row.cost}</td>
+          <td class="px-4 py-2">${row.time}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderNode(node) {
+      const ul = document.createElement("ul");
+      ul.className = "ml-4 list-disc";
+
+      for (const child of node.children) {
+        const li = document.createElement("li");
+        li.textContent = child.text;
+        li.className = "mb-1";
+        if (child.children.length > 0) {
+          li.appendChild(renderNode(child));
+        }
+        ul.appendChild(li);
+      }
+      return ul;
+    }
+  </script>
+</body>
+</html>
